@@ -34,7 +34,7 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 在项目目录创建 `autorun.sh`：
 
 ```bash
-cat > autorun.sh << 'SCRIPT_EOF'
+cat > autorun.sh << 'SCRIPT_END'
 #!/bin/bash
 # Auto-run harness: 循环执行 claude 直到所有任务完成
 
@@ -63,40 +63,39 @@ while true; do
     echo "=========================================="
 
     # 检查是否所有功能都已完成
-    REMAINING=$(python3 -c "
+    REMAINING=$(python3 -c '
 import json
-with open('feature_list.json') as f:
+with open("feature_list.json") as f:
     features = json.load(f)
-pending = [f for f in features if not f.get('done', False)]
+pending = [f for f in features if not f.get("done", False)]
 print(len(pending))
-" 2>/dev/null)
+' 2>/dev/null)
 
     if [ "$REMAINING" = "0" ] || [ -z "$REMAINING" ]; then
         echo ""
-        echo "✅ All features completed!"
+        echo "All features completed!"
         break
     fi
 
     # 显示下一个功能
-    NEXT=$(python3 -c "
+    echo "Remaining: $REMAINING features"
+
+    python3 -c '
 import json
-with open('feature_list.json') as f:
+with open("feature_list.json") as f:
     features = json.load(f)
 for f in features:
-    if not f.get('done', False):
-        print(f"{f['id']}. {f['title']}")
-        print(f"   {f['description'][:60]}...")
+    if not f.get("done", False):
+        print(f"Next: {f[\"id\"]}. {f[\"title\"]}")
+        print(f"   {f[\"description\"][:80]}...")
         break
-" 2>/dev/null)
-
-    echo "Remaining: $REMAINING features"
-    echo "Next: $NEXT"
+' 2>/dev/null
 
     echo ""
     echo "Running Claude..."
 
     # 运行 claude
-    claude --print --dangerously-skip-permissions << 'CLAUDE_EOF'
+    claude --print --dangerously-skip-permissions << 'CLAUDE_END'
 You are working on an incremental development task.
 
 ## Current Status
@@ -114,20 +113,20 @@ When done, respond with exactly:
 - "ALL_TASKS_COMPLETE" if ALL features are now done
 
 After responding, the harness will automatically commit your changes and update progress.
-CLAUDE_EOF
+CLAUDE_END
 
     # 检查是否所有功能都已完成
-    REMAINING_AFTER=$(python3 -c "
+    REMAINING_AFTER=$(python3 -c '
 import json
-with open('feature_list.json') as f:
+with open("feature_list.json") as f:
     features = json.load(f)
-pending = [f for f in features if not f.get('done', False)]
+pending = [f for f in features if not f.get("done", False)]
 print(len(pending))
-" 2>/dev/null)
+' 2>/dev/null)
 
     if [ "$REMAINING_AFTER" = "0" ] || [ -z "$REMAINING_AFTER" ]; then
         echo ""
-        echo "✅ All features completed!"
+        echo "All features completed!"
         break
     fi
 
@@ -141,7 +140,7 @@ echo ""
 echo "=========================================="
 echo "AUTO-RUN COMPLETE"
 echo "=========================================="
-SCRIPT_EOF
+SCRIPT_END
 
 chmod +x autorun.sh
 ```
