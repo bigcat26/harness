@@ -29,34 +29,144 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 
 ## 自动循环运行（推荐）
 
-使用 `autorun.sh` 脚本自动循环执行所有任务：
+### 步骤 1: 创建脚本
+
+在项目目录创建 `autorun.sh`：
+
+```bash
+cat > autorun.sh << 'SCRIPT_EOF'
+#!/bin/bash
+# Auto-run harness: 循环执行 claude 直到所有任务完成
+
+PROJECT_DIR="${1:-.}"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: Directory $PROJECT_DIR not found"
+    exit 1
+fi
+
+cd "$PROJECT_DIR"
+
+echo "=========================================="
+echo "Auto-Run Harness"
+echo "=========================================="
+echo "Project: $(pwd)"
+echo ""
+
+ITERATION=0
+
+while true; do
+    ITERATION=$((ITERATION + 1))
+    echo ""
+    echo "=========================================="
+    echo "ITERATION $ITERATION"
+    echo "=========================================="
+
+    # 检查是否所有功能都已完成
+    REMAINING=$(python3 -c "
+import json
+with open('feature_list.json') as f:
+    features = json.load(f)
+pending = [f for f in features if not f.get('done', False)]
+print(len(pending))
+" 2>/dev/null)
+
+    if [ "$REMAINING" = "0" ] || [ -z "$REMAINING" ]; then
+        echo ""
+        echo "✅ All features completed!"
+        break
+    fi
+
+    # 显示下一个功能
+    NEXT=$(python3 -c "
+import json
+with open('feature_list.json') as f:
+    features = json.load(f)
+for f in features:
+    if not f.get('done', False):
+        print(f"{f['id']}. {f['title']}")
+        print(f"   {f['description'][:60]}...")
+        break
+" 2>/dev/null)
+
+    echo "Remaining: $REMAINING features"
+    echo "Next: $NEXT"
+
+    echo ""
+    echo "Running Claude..."
+
+    # 运行 claude
+    claude --print --dangerously-skip-permissions << 'CLAUDE_EOF'
+You are working on an incremental development task.
+
+## Current Status
+Read feature_list.json to see what needs to be done.
+
+## Task
+Implement ONE feature at a time:
+1. Read feature_list.json and choose the highest priority incomplete feature
+2. Implement it with clean, production-ready code
+3. Test to ensure it works
+
+## Completion Signal
+When done, respond with exactly:
+- "FEATURE_COMPLETE" if there are more features to do
+- "ALL_TASKS_COMPLETE" if ALL features are now done
+
+After responding, the harness will automatically commit your changes and update progress.
+CLAUDE_EOF
+
+    # 检查是否所有功能都已完成
+    REMAINING_AFTER=$(python3 -c "
+import json
+with open('feature_list.json') as f:
+    features = json.load(f)
+pending = [f for f in features if not f.get('done', False)]
+print(len(pending))
+" 2>/dev/null)
+
+    if [ "$REMAINING_AFTER" = "0" ] || [ -z "$REMAINING_AFTER" ]; then
+        echo ""
+        echo "✅ All features completed!"
+        break
+    fi
+
+    echo ""
+    echo "Feature completed, continuing to next..."
+    sleep 1
+
+done
+
+echo ""
+echo "=========================================="
+echo "AUTO-RUN COMPLETE"
+echo "=========================================="
+SCRIPT_EOF
+
+chmod +x autorun.sh
+```
+
+### 步骤 2: 运行脚本
 
 ```bash
 # 在新终端运行
 cd <项目目录>
-/path/to/autorun.sh .
+./autorun.sh
 ```
 
 **工作原理**：
 1. 脚本读取 `feature_list.json`
-2. 选择优先级最高的未完成功能
-3. 调用 claude 实现
-4. claude 输出 "FEATURE_COMPLETE" 或 "ALL_TASKS_COMPLETE"
-5. 脚本 commit 并更新进度
-6. 继续下一个功能
-7. 所有功能完成后自动退出
-
-**结束信号**：
-- `FEATURE_COMPLETE`: 还有更多功能，继续下一轮
-- `ALL_TASKS_COMPLETE`: 所有功能已完成，停止循环
+2. 调用 claude 实现功能
+3. claude 输出结束信号
+4. 脚本 commit 并更新进度
+5. 继续下一个功能
+6. 所有功能完成后自动退出
 
 ---
 
 ## 核心文件格式
 
 ### 1. feature_list.json
-
-功能列表文件，JSON 格式：
 
 ```json
 [
@@ -67,46 +177,24 @@ cd <项目目录>
     "priority": "high",
     "dependencies": [],
     "done": false
-  },
-  {
-    "id": 2,
-    "title": "另一个功能",
-    "description": "依赖功能1完成后才能开始",
-    "priority": "medium",
-    "dependencies": [1],
-    "done": false
   }
 ]
 ```
 
-**字段说明**：
-- `id`: 唯一标识
-- `title`: 功能名称（简短）
-- `description`: 详细描述
-- `priority`: high | medium | low
-- `dependencies`: 依赖的其他功能 ID 数组
-- `done`: 是否已完成
-
 ### 2. claude-progress.txt
-
-进度追踪文件，Markdown 格式：
 
 ```markdown
 # Project Progress - 2026-02-14 10:00
 # Status: In Progress
 
 ## Completed
-- [x] 功能1标题
-- [x] 功能2标题
+- [x] 功能1
 
 ## Pending
-- [ ] 功能3标题: 详细描述
-- [ ] 功能4标题: 详细描述
+- [ ] 功能2: 描述
 ```
 
 ### 3. CLAUDE.md
-
-项目级规则文件，Markdown 格式：
 
 ```markdown
 # CLAUDE.md - 项目规则
@@ -114,49 +202,14 @@ cd <项目目录>
 你是一个增量工作代理。
 
 ## 规则
-
 1. 每次只实现一个功能
 2. 完成后 git commit
 3. 更新 feature_list.json 标记 done: true
 
 ## 结束信号
-
-完成当前功能后：
-- 如果还有更多功能 → 输出 "FEATURE_COMPLETE"
-- 如果所有功能都完成 → 输出 "ALL_TASKS_COMPLETE"
-
-## 工作流
-
-### 会话开始
-- 读取 feature_list.json
-- 选择优先级最高的未完成功能
-
-### 会话结束
-- git add -A && git commit -m "feat: 功能名称"
-- 更新 feature_list.json 的 done 字段
-- 输出结束信号
+- "FEATURE_COMPLETE": 还有更多功能
+- "ALL_TASKS_COMPLETE": 全部完成
 ```
-
----
-
-## 手动运行（可选）
-
-如果不使用自动脚本，也可以手动运行：
-
-```bash
-cd <项目目录>
-claude --print --dangerously-skip-permissions
-```
-
-然后告诉我"继续下一个功能"，我会帮你查看进度并引导。
-
----
-
-## 工作流
-
-1. **初始化**: 我帮你拆分功能，创建文件
-2. **运行**: 使用 autorun.sh 自动循环运行
-3. **完成**: 所有功能完成后自动停止
 
 ---
 
