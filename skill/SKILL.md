@@ -27,6 +27,31 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 
 ---
 
+## 自动循环运行（推荐）
+
+使用 `autorun.sh` 脚本自动循环执行所有任务：
+
+```bash
+# 在新终端运行
+cd <项目目录>
+/path/to/autorun.sh .
+```
+
+**工作原理**：
+1. 脚本读取 `feature_list.json`
+2. 选择优先级最高的未完成功能
+3. 调用 claude 实现
+4. claude 输出 "FEATURE_COMPLETE" 或 "ALL_TASKS_COMPLETE"
+5. 脚本 commit 并更新进度
+6. 继续下一个功能
+7. 所有功能完成后自动退出
+
+**结束信号**：
+- `FEATURE_COMPLETE`: 还有更多功能，继续下一轮
+- `ALL_TASKS_COMPLETE`: 所有功能已完成，停止循环
+
+---
+
 ## 核心文件格式
 
 ### 1. feature_list.json
@@ -94,6 +119,12 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 2. 完成后 git commit
 3. 更新 feature_list.json 标记 done: true
 
+## 结束信号
+
+完成当前功能后：
+- 如果还有更多功能 → 输出 "FEATURE_COMPLETE"
+- 如果所有功能都完成 → 输出 "ALL_TASKS_COMPLETE"
+
 ## 工作流
 
 ### 会话开始
@@ -103,44 +134,37 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 ### 会话结束
 - git add -A && git commit -m "feat: 功能名称"
 - 更新 feature_list.json 的 done 字段
+- 输出结束信号
 ```
 
 ---
 
-## 继续任务
+## 手动运行（可选）
 
-每次完成一个功能后，运行以下命令继续：
+如果不使用自动脚本，也可以手动运行：
 
 ```bash
-# 在新终端运行
 cd <项目目录>
 claude --print --dangerously-skip-permissions
 ```
 
-然后告诉我：
-> "继续下一个功能"
-
-我会帮你：
-1. 读取 feature_list.json 查看进度
-2. 告诉你下一个要做什么
-3. 引导你实现
+然后告诉我"继续下一个功能"，我会帮你查看进度并引导。
 
 ---
 
 ## 工作流
 
 1. **初始化**: 我帮你拆分功能，创建文件
-2. **实现**: 你运行 claude 实现功能
-3. **提交**: 完成后 commit 并更新进度
-4. **继续**: 重复直到完成
+2. **运行**: 使用 autorun.sh 自动循环运行
+3. **完成**: 所有功能完成后自动停止
 
 ---
 
 ## 重要说明
 
-- 需要在新终端运行 claude（不能在 Claude Code 窗口内运行）
-- 使用 `--dangerously-skip-permissions` 跳过权限确认
-- 使用 `--print` 模式让 claude 执行完自动退出
+- 需要在新终端运行脚本（不能在 Claude Code 窗口内运行）
+- 脚本会自动 commit 和更新进度文件
+- 检测到 "ALL_TASKS_COMPLETE" 时自动停止
 
 ---
 
