@@ -13,7 +13,7 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 
 ---
 
-## 初始化任务
+## 场景 1: 从 0 开始新项目
 
 告诉我你的项目需求，例如：
 
@@ -24,6 +24,37 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 2. 创建必要的文件
 3. 初始化 git 仓库
 4. 引导你开始第一个功能
+
+---
+
+## 场景 2: 已有项目执行长期任务
+
+如果你有一个已有项目，想用特定 skill 执行任务：
+
+### 步骤 1: 创建 feature_list.json
+
+手动创建或让我帮你创建：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "任务名称",
+    "description": "详细描述这个任务要做什么",
+    "priority": "high",
+    "dependencies": [],
+    "done": false,
+    "skill": "skill-name"  // 可选：指定使用的 skill
+  }
+]
+```
+
+### 步骤 2: 运行 autorun.sh
+
+```bash
+cd <项目目录>
+./autorun.sh
+```
 
 ---
 
@@ -87,6 +118,9 @@ with open("feature_list.json") as f:
 for f in features:
     if not f.get("done", False):
         print(f"Next: {f[\"id\"]}. {f[\"title\"]}")
+        skill = f.get("skill", "")
+        if skill:
+            print(f"   Skill: {skill}")
         print(f"   {f[\"description\"][:80]}...")
         break
 ' 2>/dev/null
@@ -94,8 +128,26 @@ for f in features:
     echo ""
     echo "Running Claude..."
 
+    # 获取当前任务的 skill
+    CURRENT_SKILL=$(python3 -c '
+import json
+with open("feature_list.json") as f:
+    features = json.load(f)
+for f in features:
+    if not f.get("done", False):
+        print(f.get("skill", ""))
+        break
+' 2>/dev/null)
+
+    # 构建 claude 命令
+    if [ -n "$CURRENT_SKILL" ]; then
+        CLAUDE_CMD="claude --print --dangerously-skip-permissions --add-skill $CURRENT_SKILL"
+    else
+        CLAUDE_CMD="claude --print --dangerously-skip-permissions"
+    fi
+
     # 运行 claude
-    claude --print --dangerously-skip-permissions << 'CLAUDE_END'
+    $CLAUDE_CMD << 'CLAUDE_END'
 You are working on an incremental development task.
 
 ## Current Status
@@ -153,14 +205,6 @@ cd <项目目录>
 ./autorun.sh
 ```
 
-**工作原理**：
-1. 脚本读取 `feature_list.json`
-2. 调用 claude 实现功能
-3. claude 输出结束信号
-4. 脚本 commit 并更新进度
-5. 继续下一个功能
-6. 所有功能完成后自动退出
-
 ---
 
 ## 核心文件格式
@@ -175,7 +219,8 @@ cd <项目目录>
     "description": "详细描述这个功能要做什么",
     "priority": "high",
     "dependencies": [],
-    "done": false
+    "done": false,
+    "skill": "skill-name"  // 可选：指定使用的 skill
   }
 ]
 ```
@@ -217,6 +262,7 @@ cd <项目目录>
 - 需要在新终端运行脚本（不能在 Claude Code 窗口内运行）
 - 脚本会自动 commit 和更新进度文件
 - 检测到 "ALL_TASKS_COMPLETE" 时自动停止
+- 可在 feature_list.json 中指定 `skill` 字段使用特定 skill
 
 ---
 
