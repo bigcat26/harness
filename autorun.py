@@ -165,9 +165,16 @@ class AutoRunHarness:
 
     def _build_feature_prompt(self, feature: dict) -> str:
         """动态构建 feature prompt，包含项目背景信息"""
-        
+
         data = self._load_feature_list()
-        context = data.get("project_context", {})
+
+        # 兼容旧格式（直接是数组）和新格式（包含 project_context 和 features）
+        if isinstance(data, list):
+            # 旧格式：直接是 features 数组
+            context = {}
+        else:
+            # 新格式：包含 project_context
+            context = data.get("project_context", {})
         
         # 构建项目背景部分
         project_info = ""
