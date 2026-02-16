@@ -1,0 +1,153 @@
+{
+  "project_context": {
+    "name": "Fonnx Transcriber",
+    "description": "实时录音转录、离线转录、文本摘要应用",
+    "tech_stack": "Flutter/Dart + Riverpod + GoRouter + Freezed",
+    "architecture": "Feature-First 分层架构 + Clean Architecture",
+    "development_approach": "TDD (Red-Green-Refactor)",
+    "code_standards": [
+      "每个功能必须有对应单元测试",
+      "使用中文注释和文档",
+      "确保代码符合 Dart 代码规范",
+      "UI 组件使用 Material Design 3"
+    ],
+    "skill": "vibe-coding-master"
+  },
+  "features": [
+    {
+      "id": 1,
+    "title": "项目架构重构 - Feature-First 分层架构",
+    "description": "按照 vibe-coding-skills 规范重构项目目录结构，采用 Feature-First 分层架构，创建 core/ 和 features/ 目录结构",
+    "priority": "high",
+    "dependencies": [],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 2,
+    "title": "录音模块 - 实时麦克风音频采集",
+    "description": "实现实时麦克风录音功能，使用 record 包采集音频流，支持开始、暂停、停止录音操作",
+    "priority": "high",
+    "dependencies": [1],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 3,
+    "title": "流式转录服务 - OnlineRecognizer 实现",
+    "description": "使用 sherpa-onnx 的 OnlineRecognizer 实现流式转录服务，支持实时音频流输入和增量结果返回",
+    "priority": "high",
+    "dependencies": [1],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 4,
+    "title": "离线转录服务 - OfflineRecognizer 优化",
+    "description": "优化现有的 OfflineRecognizer 实现，支持批量音频文件转录",
+    "priority": "high",
+    "dependencies": [1],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 5,
+    "title": "文本摘要服务 - AI 文本总结",
+    "description": "实现文本摘要功能，对转录后的文本进行 AI 总结，支持提取关键信息和生成摘要",
+    "priority": "high",
+    "dependencies": [3, 4],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 6,
+    "title": "状态管理 - Riverpod Providers",
+    "description": "使用 Riverpod 实现状态管理，创建录音状态、转录状态、摘要状态的 Providers",
+    "priority": "high",
+    "dependencies": [1, 2, 3, 4, 5],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 7,
+    "title": "路由管理 - GoRouter 配置",
+    "description": "使用 GoRouter 配置应用路由，包括首页、转录页、设置页、历史记录页等",
+    "priority": "medium",
+    "dependencies": [1],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 8,
+    "title": "UI - 主页和导航设计",
+    "description": "创建应用主页和导航栏，使用 Material Design 3 设计语言，包含录音入口、历史记录、设置等入口",
+    "priority": "medium",
+    "dependencies": [7],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 9,
+    "title": "UI - 实时录音转录页面",
+    "description": "创建实时录音转录页面，显示实时音频波形、增量转录结果、开始/停止按钮等 UI 组件",
+    "priority": "medium",
+    "dependencies": [2, 3, 6],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 10,
+    "title": "UI - 离线文件转录页面",
+    "description": "创建离线文件转录页面，支持选择音频文件、显示转录进度和结果",
+    "priority": "medium",
+    "dependencies": [4, 6],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 11,
+    "title": "UI - 文本摘要展示页面",
+    "description": "创建文本摘要展示页面，显示原始转录文本和 AI 生成的摘要，支持复制和分享",
+    "priority": "medium",
+    "dependencies": [5, 6],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 12,
+    "title": "UI - 设置页面",
+    "description": "创建设置页面，支持配置模型路径、采样率、转录语言、摘要选项等",
+    "priority": "medium",
+    "dependencies": [1],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 13,
+    "title": "历史记录功能",
+    "description": "实现转录历史记录功能，保存转录结果和摘要到本地存储，支持查看和删除历史",
+    "priority": "low",
+    "dependencies": [6],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 14,
+    "title": "集成测试 - 端到端流程验证",
+    "description": "编写集成测试，验证从录音到转录再到摘要的完整流程",
+    "priority": "low",
+    "dependencies": [9, 10, 11],
+    "done": true,
+    "tests_required": true
+  },
+  {
+    "id": 15,
+    "title": "性能优化和错误处理",
+    "description": "优化音频处理性能，完善错误处理和用户提示信息",
+    "priority": "medium",
+    "dependencies": [2, 3, 4, 5],
+    "done": true,
+    "tests_required": false
+  }
+  ]
+}

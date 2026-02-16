@@ -18,7 +18,6 @@ class AutoRunHarness:
     def __init__(self, project_dir: str):
         # 解析真实路径
         self.project_dir = Path(os.path.expanduser(project_dir)).resolve()
-        self.progress_file = self.project_dir / "claude-progress.txt"
         self.feature_file = self.project_dir / "feature_list.json"
         self.max_iterations = 100
         print(f"Project directory: {self.project_dir}")
@@ -63,11 +62,20 @@ class AutoRunHarness:
 
         self._print_summary()
 
-    def _load_features(self) -> list:
+    def _load_feature_list(self) -> dict:
+        """加载完整的 feature list（包含 project_context 和 features）"""
         if not self.feature_file.exists():
             print(f"Error: {self.feature_file} not found")
-            return []
+            return {"project_context": {}, "features": []}
         return json.loads(self.feature_file.read_text())
+
+    def _load_features(self) -> list:
+        """仅加载 features 列表（向后兼容）"""
+        data = self._load_feature_list()
+        # 兼容旧格式（直接是数组）和新格式（包含 project_context）
+        if isinstance(data, list):
+            return data
+        return data.get("features", [])
 
     def _run_claude_for_feature(self, feature: dict) -> bool:
         """Run Claude once to implement one feature"""
@@ -85,15 +93,23 @@ class AutoRunHarness:
             prompt_file = self.project_dir / ".prompt.txt"
             prompt_file.write_text(prompt)
 
-            # 直接继承父进程的stdio，实现实时输出
-            # 使用 bash -c 来执行管道命令
+            # 捕获输出以检测信号，同时实时显示
             process = subprocess.Popen(
                 ["bash", "-c", f'cat "{prompt_file}" | claude --print --dangerously-skip-permissions'],
                 cwd=str(self.project_dir),
-                stdin=subprocess.DEVNULL,  # 不需要stdin
-                stdout=None,  # 继承父进程stdout
-                stderr=None,  # 继承父进程stderr
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1  # 行缓冲
             )
+
+            # 实时显示输出并收集用于信号检测
+            output_lines = []
+            for line in process.stdout:
+                print(line, end='')  # 实时显示
+                output_lines.append(line)
+                sys.stdout.flush()
 
             # Wait for completion
             return_code = process.wait()
@@ -102,44 +118,101 @@ class AutoRunHarness:
             prompt_file.unlink(missing_ok=True)
 
             if return_code != 0:
-                print(f"Error: Claude exited with code {return_code}")
+                print(f"\nError: Claude exited with code {return_code}")
                 return False
 
-            # After Claude finishes, commit the progress
-            self._commit_progress(feature)
-            return True
+            # 检测输出信号
+            output_text = ''.join(output_lines)
+            signal = self._detect_completion_signal(output_text)
+            
+            if signal == "FEATURE_BLOCKED":
+                print("\n⚠️  Feature is BLOCKED - requires human intervention")
+                print("Pausing automation. Please resolve the issue and restart.")
+                sys.exit(0)
+            elif signal == "FEATURE_FAILED":
+                print("\n❌ Feature FAILED - encountered unresolvable error")
+                print("Skipping this feature and continuing...")
+                return False
+            elif signal == "FEATURE_COMPLETE":
+                print("\n✓ Feature COMPLETE")
+                # After Claude finishes, commit the progress
+                self._commit_progress(feature)
+                return True
+            else:
+                print("\n⚠️  No completion signal detected, assuming success")
+                self._commit_progress(feature)
+                return True
 
         except Exception as e:
-            print(f"Exception: {e}")
+            print(f"\nException: {e}")
             import traceback
             traceback.print_exc()
             return False
+    
+    def _detect_completion_signal(self, output: str) -> str:
+        """检测 Claude 输出中的完成信号"""
+        # 检查最后 2000 个字符（信号通常在输出末尾）
+        tail = output[-2000:] if len(output) > 2000 else output
+        
+        if "FEATURE_BLOCKED" in tail:
+            return "FEATURE_BLOCKED"
+        elif "FEATURE_FAILED" in tail:
+            return "FEATURE_FAILED"
+        elif "FEATURE_COMPLETE" in tail:
+            return "FEATURE_COMPLETE"
+        else:
+            return "UNKNOWN"
 
     def _build_feature_prompt(self, feature: dict) -> str:
-        """Build prompt for implementing a specific feature"""
+        """动态构建 feature prompt，包含项目背景信息"""
+        
+        data = self._load_feature_list()
+        context = data.get("project_context", {})
+        
+        # 构建项目背景部分
+        project_info = ""
+        if context:
+            project_info = f"""## 项目背景
 
-        return f"""You are working on a manga generation project.
+- **项目名称**: {context.get('name', 'Unknown')}
+- **描述**: {context.get('description', '')}
+- **技术栈**: {context.get('tech_stack', '')}
+- **架构**: {context.get('architecture', '')}
+- **开发方法**: {context.get('development_approach', '')}
 
-## Current Task: {feature['title']}
+"""
+            
+            # 添加代码规范
+            standards = context.get('code_standards', [])
+            if standards:
+                project_info += "## 代码规范\n\n"
+                for std in standards:
+                    project_info += f"- {std}\n"
+                project_info += "\n"
+        
+        # 构建完整 prompt
+        return f"""你是一个增量开发代理，专注于实现单个功能。
+
+{project_info}## 当前任务: {feature['title']}
 
 {feature['description']}
 
-## Instructions
+## 执行步骤
 
-1. Read the current project structure:
-   ls -la
-   cat claude-progress.txt
-   cat feature_list.json
+1. 查看项目结构和当前状态
+2. 实现 ONLY 这个功能 - 不要实现其他功能
+3. 编写清晰、生产级别的代码，包含适当的错误处理
+4. 如果需要测试，运行测试确保功能正常
+5. 确保代码无明显 bug
 
-2. Implement ONLY this feature - do NOT work on other features
+## 完成信号
 
-3. Write clean, production-ready code with proper error handling
+完成后，请在响应中输出以下信号之一：
+- "FEATURE_COMPLETE" - 功能已完成
+- "FEATURE_BLOCKED" - 需要人工干预才能继续
+- "FEATURE_FAILED" - 遇到无法解决的错误
 
-4. After implementation:
-   - Run tests if available
-   - Ensure code is bug-free
-
-5. IMPORTANT: When done, respond with "FEATURE_COMPLETE" to signal completion.
+注意：不需要关注整体项目是否完成，只需专注当前功能。
 """
 
     def _commit_progress(self, feature: dict):
@@ -172,40 +245,22 @@ class AutoRunHarness:
         self._update_progress(feature)
 
     def _update_progress(self, completed_feature: dict):
-        """Mark feature as done in progress file"""
+        """Mark feature as done in feature_list.json"""
 
-        features = self._load_features()
+        data = self._load_feature_list()
+        features = data.get("features", data if isinstance(data, list) else [])
 
         for f in features:
             if f['id'] == completed_feature['id']:
                 f['done'] = True
 
-        self.feature_file.write_text(json.dumps(features, indent=2))
+        # 保存回文件（保持新旧格式兼容）
+        if isinstance(data, list):
+            self.feature_file.write_text(json.dumps(features, indent=2, ensure_ascii=False))
+        else:
+            data['features'] = features
+            self.feature_file.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
-        # Update progress.txt
-        self._update_progress_txt(features)
-
-    def _update_progress_txt(self, features: list):
-        """Update the readable progress file"""
-
-        lines = [
-            f"# Project Progress - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            "# Status: In Progress",
-            "",
-            "## Completed",
-        ]
-
-        for f in features:
-            if f.get("done"):
-                lines.append(f"- [x] {f['title']}")
-
-        lines.extend(["", "## Pending"])
-
-        for f in features:
-            if not f.get("done"):
-                lines.append(f"- [ ] {f['title']}")
-
-        self.progress_file.write_text("\n".join(lines))
 
     def _print_summary(self):
         """Print final summary"""
@@ -221,8 +276,16 @@ class AutoRunHarness:
         if completed < total:
             remaining = [f['title'] for f in features if not f.get("done", False)]
             print("\nRemaining:")
-            for f in remaining:
-                print(f"  - {f}")
+            for title in remaining:
+                print(f"  - {title}")
+        
+        # 显示进度摘要
+        print("\n" + "=" * 60)
+        print("PROGRESS SUMMARY")
+        print("=" * 60)
+        for f in features:
+            status = "✓" if f.get("done") else "○"
+            print(f"{status} [{f['id']}] {f['title']}")
 
 
 def main():

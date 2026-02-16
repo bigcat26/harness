@@ -20,10 +20,18 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 > "帮我创建一个可以读取文本故事并生成有声漫画的程序"
 
 我将帮你：
-1. 分析需求，拆分成具体功能点
-2. 创建必要的文件
-3. 初始化 git 仓库
-4. 引导你开始第一个功能
+1. 深入讨论需求，明确技术栈和架构设计
+2. 拆分成具体、可测试的功能点
+3. 创建 **feature_list.json**（包含项目背景、架构原理规则和任务列表）
+4. 创建 **TASKS.md**（包含 Mermaid 架构图、数据模型、核心流程和任务详细描述）
+5. 初始化 git 仓库（如果需要）
+
+**我会确保：**
+- 每个任务都是独立、可测试的
+- 任务之间的依赖关系清晰
+- 架构设计符合最佳实践，并用 Mermaid 图可视化
+- 明确哪些任务需要单元测试
+- TASKS.md 包含完整的架构设计、实体关系、流程图等
 
 ---
 
@@ -31,238 +39,271 @@ description: 使用 Claude Code 实现长期运行的大型任务。通过增量
 
 如果你有一个已有项目，想用特定 skill 执行任务：
 
-### 步骤 1: 创建 feature_list.json
+### 步骤 1: 创建 feature_list.json 和 TASKS.md
 
-手动创建或让我帮你创建：
+让我帮你创建包含项目背景和任务列表的 `feature_list.json`，以及包含架构设计的 `TASKS.md`：
+
+#### feature_list.json
 
 ```json
-[
-  {
-    "id": 1,
-    "title": "任务名称",
-    "description": "详细描述这个任务要做什么",
-    "priority": "high",
-    "dependencies": [],
-    "done": false,
+{
+  "project_context": {
+    "name": "项目名称",
+    "description": "项目简介",
+    "tech_stack": "技术栈",
+    "architecture": "架构设计",
+    "development_approach": "开发方法（如 TDD）",
+    "code_standards": [
+      "代码规范1",
+      "代码规范2"
+    ],
     "skill": "skill-name"  // 可选：指定使用的 skill
-  }
-]
+  },
+  "features": [
+    {
+      "id": 1,
+      "title": "任务名称",
+      "description": "详细描述这个任务要做什么",
+      "priority": "high",
+      "dependencies": [],
+      "done": false,
+      "tests_required": true
+    }
+  ]
+}
 ```
 
-### 步骤 2: 运行 autorun.sh
+#### TASKS.md
 
-```bash
-cd <项目目录>
-./autorun.sh
-```
-
----
-
-## 自动循环运行（推荐）
-
-### 步骤 1: 创建脚本
-
-在项目目录创建 `autorun.sh`：
-
-```bash
-cat > autorun.sh << 'SCRIPT_END'
-#!/bin/bash
-# Auto-run harness: 循环执行 claude 直到所有任务完成
-
-PROJECT_DIR="${1:-.}"
-
-if [ ! -d "$PROJECT_DIR" ]; then
-    echo "Error: Directory $PROJECT_DIR not found"
-    exit 1
-fi
-
-cd "$PROJECT_DIR"
-
-echo "=========================================="
-echo "Auto-Run Harness"
-echo "=========================================="
-echo "Project: $(pwd)"
-echo ""
-
-ITERATION=0
-
-while true; do
-    ITERATION=$((ITERATION + 1))
-    echo ""
-    echo "=========================================="
-    echo "ITERATION $ITERATION"
-    echo "=========================================="
-
-    # 检查是否所有功能都已完成
-    REMAINING=$(python3 -c '
-import json
-with open("feature_list.json") as f:
-    features = json.load(f)
-pending = [f for f in features if not f.get("done", False)]
-print(len(pending))
-' 2>/dev/null)
-
-    if [ "$REMAINING" = "0" ] || [ -z "$REMAINING" ]; then
-        echo ""
-        echo "All features completed!"
-        break
-    fi
-
-    # 显示下一个功能
-    echo "Remaining: $REMAINING features"
-
-    python3 -c '
-import json
-with open("feature_list.json") as f:
-    features = json.load(f)
-for f in features:
-    if not f.get("done", False):
-        print(f"Next: {f[\"id\"]}. {f[\"title\"]}")
-        skill = f.get("skill", "")
-        if skill:
-            print(f"   Skill: {skill}")
-        print(f"   {f[\"description\"][:80]}...")
-        break
-' 2>/dev/null
-
-    echo ""
-    echo "Running Claude..."
-
-    # 获取当前任务的 skill
-    CURRENT_SKILL=$(python3 -c '
-import json
-with open("feature_list.json") as f:
-    features = json.load(f)
-for f in features:
-    if not f.get("done", False):
-        print(f.get("skill", ""))
-        break
-' 2>/dev/null)
-
-    # 构建 claude 命令
-    if [ -n "$CURRENT_SKILL" ]; then
-        CLAUDE_CMD="claude --print --dangerously-skip-permissions --add-skill $CURRENT_SKILL"
-    else
-        CLAUDE_CMD="claude --print --dangerously-skip-permissions"
-    fi
-
-    # 运行 claude
-    $CLAUDE_CMD << 'CLAUDE_END'
-You are working on an incremental development task.
-
-## Current Status
-Read feature_list.json to see what needs to be done.
-
-## Task
-Implement ONE feature at a time:
-1. Read feature_list.json and choose the highest priority incomplete feature
-2. Implement it with clean, production-ready code
-3. Test to ensure it works
-
-## Completion Signal
-When done, respond with exactly:
-- "FEATURE_COMPLETE" if there are more features to do
-- "ALL_TASKS_COMPLETE" if ALL features are now done
-
-After responding, the harness will automatically commit your changes and update progress.
-CLAUDE_END
-
-    # 检查是否所有功能都已完成
-    REMAINING_AFTER=$(python3 -c '
-import json
-with open("feature_list.json") as f:
-    features = json.load(f)
-pending = [f for f in features if not f.get("done", False)]
-print(len(pending))
-' 2>/dev/null)
-
-    if [ "$REMAINING_AFTER" = "0" ] || [ -z "$REMAINING_AFTER" ]; then
-        echo ""
-        echo "All features completed!"
-        break
-    fi
-
-    echo ""
-    echo "Feature completed, continuing to next..."
-    sleep 1
-
-done
-
-echo ""
-echo "=========================================="
-echo "AUTO-RUN COMPLETE"
-echo "=========================================="
-SCRIPT_END
-
-chmod +x autorun.sh
-```
-
-### 步骤 2: 运行脚本
-
-```bash
-# 在新终端运行
-cd <项目目录>
-./autorun.sh
-```
+包含以下内容：
+- **项目概述**：项目背景、目标、技术栈
+- **架构设计**：使用 Mermaid 类图、组件图展示系统架构
+- **数据模型**：使用 Mermaid ER 图展示实体关系
+- **核心流程**：使用 Mermaid 流程图展示关键业务流程
+- **任务详细描述**：每个任务的详细实现说明、验收标准
 
 ---
 
 ## 核心文件格式
 
-### 1. feature_list.json
+### feature_list.json
+
+这是唯一需要的配置文件，包含项目背景和任务列表：
 
 ```json
-[
-  {
-    "id": 1,
-    "title": "功能标题",
-    "description": "详细描述这个功能要做什么",
-    "priority": "high",
-    "dependencies": [],
-    "done": false,
-    "skill": "skill-name"  // 可选：指定使用的 skill
-  }
-]
+{
+  "project_context": {
+    "name": "项目名称",
+    "description": "项目简介",
+    "tech_stack": "技术栈（如 Flutter/Dart + Riverpod）",
+    "architecture": "架构设计（如 Feature-First + Clean Architecture）",
+    "development_approach": "开发方法（如 TDD）",
+    "code_standards": [
+      "代码规范1",
+      "代码规范2"
+    ],
+    "skill": "可选：指定使用的 skill"
+  },
+  "features": [
+    {
+      "id": 1,
+      "title": "功能标题",
+      "description": "详细描述这个功能要做什么",
+      "priority": "high|medium|low",
+      "dependencies": [依赖的功能 ID],
+      "done": false,
+      "tests_required": true
+    }
+  ]
+}
 ```
 
-### 2. claude-progress.txt
+**说明：**
+- `project_context`: 项目背景信息，会自动注入到每个子任务的 prompt 中
+  - `skill`: 可指定使用的技能（如 `vibe-coding-master`），Agent 会遵循该技能的所有规范
+- `features`: 任务列表，按优先级和依赖关系执行
+  - `tests_required`: 是否需要单元测试（默认 true）
+- `done`: 任务完成状态，由 autorun.py 自动更新
+
+### TASKS.md 格式示例
 
 ```markdown
-# Project Progress - 2026-02-14 10:00
-# Status: In Progress
+# 项目任务详细说明
 
-## Completed
-- [x] 功能1
+## 项目概述
 
-## Pending
-- [ ] 功能2: 描述
+**项目名称**: Fonnx Transcriber  
+**技术栈**: Flutter/Dart + Riverpod + GoRouter + Freezed  
+**架构**: Feature-First 分层架构 + Clean Architecture  
+**开发方法**: TDD (Test-Driven Development)
+
+## 系统架构
+
+### 整体架构
+
+```mermaid
+graph TB
+    UI[UI Layer<br/>Widgets] --> State[State Management<br/>Riverpod]
+    State --> Domain[Domain Layer<br/>Business Logic]
+    Domain --> Data[Data Layer<br/>Repositories]
+    Data --> External[External Services<br/>Sherpa-ONNX, TTS]
 ```
 
-### 3. CLAUDE.md
+### 核心模块
 
-```markdown
-# CLAUDE.md - 项目规则
+```mermaid
+classDiagram
+    class RecordingService {
+        +startRecording()
+        +stopRecording()
+        +Stream~AudioData~ audioStream
+    }
+    
+    class TranscriptionService {
+        +transcribe(audio)
+        +Stream~String~ transcriptStream
+    }
+    
+    class SummaryService {
+        +summarize(text)
+        +String summary
+    }
+    
+    RecordingService --> TranscriptionService
+    TranscriptionService --> SummaryService
+```
 
-你是一个增量工作代理。
+### 数据流程
 
-## 规则
-1. 每次只实现一个功能
-2. 完成后 git commit
-3. 更新 feature_list.json 标记 done: true
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Recording
+    participant Transcription
+    participant Summary
+    
+    User->>UI: 点击录音
+    UI->>Recording: startRecording()
+    Recording-->>UI: audioStream
+    UI->>Transcription: transcribe(audioStream)
+    Transcription-->>UI: transcriptStream
+    User->>UI: 停止录音
+    UI->>Summary: summarize(transcript)
+    Summary-->>UI: summary
+    UI-->>User: 显示结果
+```
 
-## 结束信号
-- "FEATURE_COMPLETE": 还有更多功能
-- "ALL_TASKS_COMPLETE": 全部完成
+## 任务详细说明
+
+### Task 1: 项目架构重构
+
+**目标**: 按照 Feature-First 分层架构重构项目  
+**验收标准**:
+- [ ] 创建 `lib/core/` 目录存放共享代码
+- [ ] 创建 `lib/features/` 目录按功能组织代码
+- [ ] 每个 feature 包含 `data/`, `domain/`, `presentation/` 子目录
+- [ ] 所有模块可独立测试
+
+**实现要点**:
+- 使用 Riverpod 进行依赖注入
+- 遵循 Clean Architecture 原则
+- 确保模块间低耦合
+
+### Task 2: 录音模块实现
+
+**目标**: 实现实时麦克风音频采集  
+**验收标准**:
+- [ ] 使用 `record` 包采集音频流
+- [ ] 支持开始、暂停、停止操作
+- [ ] 提供音频流 Stream<List<int>>
+- [ ] 编写单元测试覆盖核心逻辑
+
+...
 ```
 
 ---
 
+## 开发规范
+
+### 架构设计原则
+- **模块化**: 功能模块独立，低耦合高内聚
+- **可测试性**: 每个模块都应该易于单元测试
+- **清晰的职责**: 每个类/函数只做一件事（单一职责原则）
+- **依赖注入**: 便于测试和替换实现
+
+### 测试要求
+- **必须编写单元测试**: 除非功能明确标记为 `tests_required: false`
+- **TDD 优先**: 推荐采用测试驱动开发（先写测试，再写实现）
+- **测试覆盖核心逻辑**: 至少覆盖主要业务逻辑和边界情况
+- **测试必须通过**: 每次完成后确保所有测试通过
+
+### Git Commit 规范
+- 使用语义化提交信息（Conventional Commits）
+- 格式: `<type>: <description>`
+- 常用 type: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
+- 示例: `feat: add user authentication module`
+- **注意**: commit 由 autorun.py 自动执行，Agent 只需确保代码质量
+
+---
+
+## Agent 完成信号
+
+Agent 完成每个任务后，会输出以下信号之一：
+- `FEATURE_COMPLETE` - 功能已完成（测试通过，代码可运行）
+- `FEATURE_BLOCKED` - 需要人工干预才能继续
+- `FEATURE_FAILED` - 遇到无法解决的错误
+
+**注意：** Agent 不需要关注整体项目是否完成，只需专注当前功能。
+
+## 工作流程
+
+### Agent 执行流程（每个任务）
+1. **理解需求**: 阅读任务描述和项目背景
+2. **设计架构**: 如果是新功能，先设计模块结构
+3. **编写测试**: 先写单元测试（TDD: Red）
+4. **实现功能**: 编写刚好能通过测试的代码（TDD: Green）
+5. **重构优化**: 在测试保护下优化代码（TDD: Refactor）
+6. **运行测试**: 确保所有测试通过
+7. **输出信号**: 输出 FEATURE_COMPLETE/BLOCKED/FAILED
+
+### autorun.py 自动处理
+- 检测 Agent 输出的完成信号
+- 自动执行 `git add -A` 和 `git commit`
+- 更新 `feature_list.json` 标记任务完成
+- 继续执行下一个任务，直到全部完成
+
 ## 重要说明
 
-- 需要在新终端运行脚本（不能在 Claude Code 窗口内运行）
-- 脚本会自动 commit 和更新进度文件
-- 检测到 "ALL_TASKS_COMPLETE" 时自动停止
-- 可在 feature_list.json 中指定 `skill` 字段使用特定 skill
+- 需要在新终端运行 autorun.py（不能在 Claude Code 窗口内运行）
+- 脚本会自动 commit 和更新 feature_list.json
+- 所有任务完成后自动停止
+- 项目背景信息会自动注入到每个子任务的 prompt 中
+- 不需要手动创建 CLAUDE.md 或 claude-progress.txt
+- Agent 必须遵循 TDD 流程和架构设计原则
+
+---
+
+---
+
+## 输出文件要求
+
+当与用户讨论完需求后，你必须生成以下两个文件：
+
+### 1. feature_list.json
+- 包含完整的 `project_context` 和 `features` 列表
+- 确保 JSON 格式正确，可以被 `autorun.py` 解析
+- 每个任务都有明确的 `id`, `title`, `description`, `priority`, `dependencies`, `tests_required`
+
+### 2. TASKS.md
+- 包含项目概述、技术栈、架构设计
+- **必须包含 Mermaid 图**：
+  - 系统架构图（组件图或分层图）
+  - 核心模块类图
+  - 关键业务流程的序列图或流程图
+  - 数据模型 ER 图（如适用）
+- 每个任务的详细说明、验收标准、实现要点
+- 使用 Markdown 格式，清晰易读
 
 ---
 
